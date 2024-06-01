@@ -67,6 +67,9 @@
     <Link>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy "$(SolutionDir)Orbbec_Wrapper_Files" "$(OutDir)" /Y /I</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -83,6 +86,9 @@
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy "$(SolutionDir)Orbbec_Wrapper_Files" "$(OutDir)" /Y /I</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
@@ -102,6 +108,8 @@
     <Import Project="$(SolutionDir)\packages\Microsoft.Azure.Kinect.BodyTracking.1.1.2\build\native\Microsoft.Azure.Kinect.BodyTracking.targets" Condition="Exists('$(SolutionDir)\packages\Microsoft.Azure.Kinect.BodyTracking.1.1.2\build\native\Microsoft.Azure.Kinect.BodyTracking.targets')" />
     <Import Project="$(SolutionDir)\packages\Microsoft.Azure.Kinect.BodyTracking.ONNXRuntime.1.10.0\build\native\Microsoft.Azure.Kinect.BodyTracking.ONNXRuntime.targets" Condition="Exists('$(SolutionDir)\packages\Microsoft.Azure.Kinect.BodyTracking.ONNXRuntime.1.10.0\build\native\Microsoft.Azure.Kinect.BodyTracking.ONNXRuntime.targets')" />
     <Import Project="$(SolutionDir)\packages\glfw.3.3.0\build\native\glfw.targets" Condition="Exists('$(SolutionDir)\packages\glfw.3.3.0\build\native\glfw.targets')" />
+    <Import Project="packages\boost.1.85.0\build\boost.targets" Condition="Exists('packages\boost.1.85.0\build\boost.targets')" />
+    <Import Project="packages\nlohmann.json.3.11.2\build\native\nlohmann.json.targets" Condition="Exists('packages\nlohmann.json.3.11.2\build\native\nlohmann.json.targets')" />
   </ImportGroup>
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
@@ -111,5 +119,7 @@
     <Error Condition="!Exists('$(SolutionDir)\packages\Microsoft.Azure.Kinect.BodyTracking.1.1.2\build\native\Microsoft.Azure.Kinect.BodyTracking.targets')" Text="$([System.String]::Format('$(ErrorText)', '$(SolutionDir)\packages\Microsoft.Azure.Kinect.BodyTracking.1.1.2\build\native\Microsoft.Azure.Kinect.BodyTracking.targets'))" />
     <Error Condition="!Exists('$(SolutionDir)\packages\Microsoft.Azure.Kinect.BodyTracking.ONNXRuntime.1.10.0\build\native\Microsoft.Azure.Kinect.BodyTracking.ONNXRuntime.targets')" Text="$([System.String]::Format('$(ErrorText)', '$(SolutionDir)\packages\Microsoft.Azure.Kinect.BodyTracking.ONNXRuntime.1.10.0\build\native\Microsoft.Azure.Kinect.BodyTracking.ONNXRuntime.targets'))" />
     <Error Condition="!Exists('$(SolutionDir)\packages\glfw.3.3.0\build\native\glfw.targets')" Text="$([System.String]::Format('$(ErrorText)', '$(SolutionDir)\packages\glfw.3.3.0\build\native\glfw.targets'))" />
+    <Error Condition="!Exists('packages\boost.1.85.0\build\boost.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\boost.1.85.0\build\boost.targets'))" />
+    <Error Condition="!Exists('packages\nlohmann.json.3.11.2\build\native\nlohmann.json.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\nlohmann.json.3.11.2\build\native\nlohmann.json.targets'))" />
   </Target>
 </Project>
