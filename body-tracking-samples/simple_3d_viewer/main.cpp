@@ -37,6 +37,7 @@ void setup_udp(string ip_address, int port) {
 
         udp::resolver resolver(io_context);
         endpoints = new udp::resolver::results_type(resolver.resolve(udp::v4(), ip_address, std::to_string(port)));
+        std::cout << "UDP Connection Established: " << ip_address << ":" << port << std::endl;
     }
     catch (std::exception& e) {
         std::cerr << "Socket Setup Error: " << e.what() << std::endl;
@@ -80,7 +81,6 @@ void send_message(const string& message_str) {
         for (auto& endpoint : *endpoints) {
             send_socket->send_to(boost::asio::buffer(message_str), endpoint);
         }
-        cout << "Message sent." << endl;
     }
     catch (std::exception& e) {
         cerr << "Error sending message: " << e.what() << endl;
@@ -129,7 +129,7 @@ vector<string> joint_names =
 void PrintUsage()
 {
 #ifdef _WIN32
-    printf("\nUSAGE: (k4abt_)simple_3d_viewer.exe SensorMode[NFOV_UNBINNED, WFOV_BINNED](optional) RuntimeMode[CPU, CUDA, DIRECTML, TENSORRT](optional) -model MODEL_PATH(optional) -ip IP_ADDRESS(optional) -port PORT(optional)\n");
+    printf("\nUSAGE: (k4abt_)simple_3d_viewer.exe SensorMode[NFOV_UNBINNED, WFOV_BINNED](optional) RuntimeMode[CPU, CUDA, DIRECTML, TENSORRT](optional) -model MODEL_PATH(optional) -id DEVICE_INDEX(optional) -ip IP_ADDRESS(optional) -port PORT(optional)\n");
 #else
     printf("\nUSAGE: (k4abt_)simple_3d_viewer.exe SensorMode[NFOV_UNBINNED, WFOV_BINNED](optional) RuntimeMode[CPU, CUDA, TENSORRT](optional) -ip IP_ADDRESS(optional) -port PORT(optional)\n");
 #endif
@@ -144,6 +144,7 @@ void PrintUsage()
 #endif
     printf("      TENSORRT - Use the TensorRT processing mode.\n");
     printf("      OFFLINE - Play a specified file. Does not require Kinect device\n");
+    printf("      DEVICE_INDEX - Index of which Kinect to open. Defaults to 0.\n");
     printf("      IP_ADDRESS - Stream Skeleton Data over UDP as JSON blob to {host:port}. Defaults to 127.0.0.1:55555.\n");
     printf("      HOST - Stream Skeleton Data over UDP as JSON blob to {host:port}. Defaults to 127.0.0.1:55555.\n");
     printf("e.g.   (k4abt_)simple_3d_viewer.exe WFOV_BINNED CPU\n");
@@ -216,6 +217,7 @@ struct InputSettings
     std::string FileName;
     std::string ModelPath;
     std::string ip_address;
+    int device_index;
     int port;
 };
 
@@ -269,6 +271,16 @@ bool ParseInputSettingsFromArg(int argc, char** argv, InputSettings& inputSettin
             else
             {
                 printf("Error: model path missing\n");
+                return false;
+            }
+        }
+        else if (inputArg == std::string("-id"))
+        {
+            if (i < argc - 1)
+                inputSettings.device_index = stoi(argv[++i]);
+            else
+            {
+                printf("Error: device index missing\n");
                 return false;
             }
         }
@@ -388,10 +400,10 @@ void VisualizeResult(k4abt_frame_t bodyFrame, Window3dWrapper& window3d, int dep
                 window3d.AddBone(joint1Position, joint2Position, confidentBone ? color : lowConfidenceColor);
             }
         }
-    }
+    }   
     // send the json message over udp
     if (socket && endpoints && numBodies > 0) {
-        cout << frame_result_json << endl;
+        //cout << frame_result_json << endl;
         auto msg = frame_result_json.dump();
         send_message(msg);
     }
@@ -504,7 +516,7 @@ void PlayFile(InputSettings inputSettings)
 }
 #include <iostream>
 #include <sstream>
-void PlayFromDevice(InputSettings inputSettings) 
+void PlayFromDevice(InputSettings inputSettings)
 {
     uint32_t count = k4a_device_get_installed_count();
     std::stringstream ss;
@@ -515,8 +527,11 @@ void PlayFromDevice(InputSettings inputSettings)
     ss >> s;
     std::cout << s << std::endl;
 
+    // open the device based on its serial number
+    vector<string> serial_numbers = { "", "CL2A141004N", "CL2A141004F" };
+    cout << "device index: " << inputSettings.device_index << endl;
     k4a_device_t device = nullptr;
-    VERIFY(k4a_device_open(0, &device), "Open K4A Device failed!");
+    VERIFY(k4a_device_open(inputSettings.device_index, &device), "Open K4A Device failed!");
 
     // Start camera. Make sure depth camera is enabled.
     k4a_device_configuration_t deviceConfig = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
@@ -613,8 +628,18 @@ int main(int argc, char** argv)
     // Check if there are host:port input, otherwise use default
     string ip_address;
     int port;
+    int device_index;
     ip_address = !inputSettings.ip_address.empty() ? inputSettings.ip_address : "127.0.0.1";
     port = inputSettings.port ? inputSettings.port : 55555;
+    // Set the default device index to 0 if not provided
+    if (inputSettings.device_index) {
+        cout << "Device index provided: " << inputSettings.device_index << endl;
+    }
+    else {
+        cout << "No device index provided. Using default device index 0." << endl;
+        inputSettings.device_index = 0;
+    }
+    
     setup_udp(ip_address, port);
 
     // Either play the offline file or play from the device
