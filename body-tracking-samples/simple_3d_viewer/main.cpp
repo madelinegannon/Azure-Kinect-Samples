@@ -8,17 +8,130 @@
 #include <k4arecord/playback.h>
 #include <k4a/k4a.h>
 #include <k4abt.h>
+#include <nlohmann/json.hpp>
+#include <boost/asio.hpp>
 
 #include <BodyTrackingHelpers.h>
 #include <Utilities.h>
 #include <Window3dWrapper.h>
 
+using namespace std;
+using boost::asio::ip::udp;
+using namespace nlohmann;
+
+// Declare global socket variable
+boost::asio::io_context io_context;
+udp::socket* send_socket = nullptr;
+udp::resolver::results_type* endpoints = nullptr;
+
+
+/**
+ * @brief Create a UDP Sender.
+ *
+ * @param (string)  ip_address: host address
+ * @param (int)  port: send port
+ */
+void setup_udp(string ip_address, int port) {
+    try {
+        send_socket = new udp::socket(io_context, udp::endpoint(udp::v4(), 0));
+
+        udp::resolver resolver(io_context);
+        endpoints = new udp::resolver::results_type(resolver.resolve(udp::v4(), ip_address, std::to_string(port)));
+    }
+    catch (std::exception& e) {
+        std::cerr << "Socket Setup Error: " << e.what() << std::endl;
+        if (send_socket) {
+            delete send_socket;
+            send_socket = nullptr;
+        }
+        if (endpoints) {
+            delete endpoints;
+            endpoints = nullptr;
+        }
+    }
+}
+
+/**
+ * @brief Close the UDP Connection.
+ */
+void shutdown_udp() {
+    // Close the Socket
+    if (send_socket) {
+        send_socket->shutdown(boost::asio::socket_base::shutdown_both);
+        send_socket->close();
+        // Delete global variables
+        delete send_socket;
+        send_socket = nullptr;
+    }
+    if (endpoints) {
+        // Delete global variables
+        delete endpoints;
+        endpoints = nullptr;
+    }
+}
+
+/**
+ * @brief Send a message over UDP.
+ *
+ * @param (string)  message_str: message to send.
+ */
+void send_message(const string& message_str) {
+    try {
+        for (auto& endpoint : *endpoints) {
+            send_socket->send_to(boost::asio::buffer(message_str), endpoint);
+        }
+        cout << "Message sent." << endl;
+    }
+    catch (std::exception& e) {
+        cerr << "Error sending message: " << e.what() << endl;
+    }
+}
+
+
+
+vector<string> joint_names =
+{
+    "K4ABT_JOINT_PELVIS",
+    "K4ABT_JOINT_SPINE_NAVEL",
+    "K4ABT_JOINT_SPINE_CHEST",
+    "K4ABT_JOINT_NECK",
+    "K4ABT_JOINT_CLAVICLE_LEFT",
+    "K4ABT_JOINT_SHOULDER_LEFT",
+    "K4ABT_JOINT_ELBOW_LEFT",
+    "K4ABT_JOINT_WRIST_LEFT",
+    "K4ABT_JOINT_HAND_LEFT",
+    "K4ABT_JOINT_HANDTIP_LEFT",
+    "K4ABT_JOINT_THUMB_LEFT",
+    "K4ABT_JOINT_CLAVICLE_RIGHT",
+    "K4ABT_JOINT_SHOULDER_RIGHT",
+    "K4ABT_JOINT_ELBOW_RIGHT",
+    "K4ABT_JOINT_WRIST_RIGHT",
+    "K4ABT_JOINT_HAND_RIGHT",
+    "K4ABT_JOINT_HANDTIP_RIGHT",
+    "K4ABT_JOINT_THUMB_RIGHT",
+    "K4ABT_JOINT_HIP_LEFT",
+    "K4ABT_JOINT_KNEE_LEFT",
+    "K4ABT_JOINT_ANKLE_LEFT",
+    "K4ABT_JOINT_FOOT_LEFT",
+    "K4ABT_JOINT_HIP_RIGHT",
+    "K4ABT_JOINT_KNEE_RIGHT",
+    "K4ABT_JOINT_ANKLE_RIGHT",
+    "K4ABT_JOINT_FOOT_RIGHT",
+    "K4ABT_JOINT_HEAD",
+    "K4ABT_JOINT_NOSE",
+    "K4ABT_JOINT_EYE_LEFT",
+    "K4ABT_JOINT_EAR_LEFT",
+    "K4ABT_JOINT_EYE_RIGHT",
+    "K4ABT_JOINT_EAR_RIGHT",
+    "K4ABT_JOINT_COUNT"
+};
+
 void PrintUsage()
 {
 #ifdef _WIN32
-    printf("\nUSAGE: (k4abt_)simple_3d_viewer.exe SensorMode[NFOV_UNBINNED, WFOV_BINNED](optional) RuntimeMode[CPU, CUDA, DIRECTML, TENSORRT](optional) -model MODEL_PATH(optional)\n");
+    printf("\nUSAGE: (k4abt_)simple_3d_viewer.exe SensorMode[NFOV_UNBINNED, WFOV_BINNED](optional) RuntimeMode[CPU, CUDA, DIRECTML, TENSORRT](optional) -model MODEL_PATH(optional) -ip IP_ADDRESS(optional) -port PORT(optional)\n");
 #else
-    printf("\nUSAGE: (k4abt_)simple_3d_viewer.exe SensorMode[NFOV_UNBINNED, WFOV_BINNED](optional) RuntimeMode[CPU, CUDA, TENSORRT](optional)\n");
+    printf("\nUSAGE: (k4abt_)simple_3d_viewer.exe SensorMode[NFOV_UNBINNED, WFOV_BINNED](optional) RuntimeMode[CPU, CUDA, TENSORRT](optional) -ip IP_ADDRESS(optional) -port PORT(optional)\n");
 #endif
     printf("  - SensorMode: \n");
     printf("      NFOV_UNBINNED (default) - Narrow Field of View Unbinned Mode [Resolution: 640x576; FOI: 75 degree x 65 degree]\n");
@@ -31,10 +144,13 @@ void PrintUsage()
 #endif
     printf("      TENSORRT - Use the TensorRT processing mode.\n");
     printf("      OFFLINE - Play a specified file. Does not require Kinect device\n");
+    printf("      IP_ADDRESS - Stream Skeleton Data over UDP as JSON blob to {host:port}. Defaults to 127.0.0.1:55555.\n");
+    printf("      HOST - Stream Skeleton Data over UDP as JSON blob to {host:port}. Defaults to 127.0.0.1:55555.\n");
     printf("e.g.   (k4abt_)simple_3d_viewer.exe WFOV_BINNED CPU\n");
     printf("e.g.   (k4abt_)simple_3d_viewer.exe CPU\n");
     printf("e.g.   (k4abt_)simple_3d_viewer.exe WFOV_BINNED\n");
     printf("e.g.   (k4abt_)simple_3d_viewer.exe OFFLINE MyFile.mkv\n");
+    printf("e.g.   (k4abt_)simple_3d_viewer.exe CPU -ip 192.168.1.100 -port 12345\n");
 }
 
 void PrintAppUsage()
@@ -99,6 +215,8 @@ struct InputSettings
     bool Offline = false;
     std::string FileName;
     std::string ModelPath;
+    std::string ip_address;
+    int port;
 };
 
 bool ParseInputSettingsFromArg(int argc, char** argv, InputSettings& inputSettings)
@@ -154,6 +272,26 @@ bool ParseInputSettingsFromArg(int argc, char** argv, InputSettings& inputSettin
                 return false;
             }
         }
+        else if (inputArg == std::string("-ip"))
+        {
+            if (i < argc - 1)
+                inputSettings.ip_address = argv[++i];
+            else
+            {
+                printf("Error: ip address missing\n");
+                return false;
+            }
+        }
+        else if (inputArg == std::string("-port"))
+        {
+            if (i < argc - 1)
+                inputSettings.port = stoi(argv[++i]);
+            else
+            {
+                printf("Error: ip address missing\n");
+                return false;
+            }
+        }
         else
         {
             printf("Error: command not understood: %s\n", inputArg.c_str());
@@ -191,11 +329,20 @@ void VisualizeResult(k4abt_frame_t bodyFrame, Window3dWrapper& window3d, int dep
     // Visualize the skeleton data
     window3d.CleanJointsAndBones();
     uint32_t numBodies = k4abt_frame_get_num_bodies(bodyFrame);
+    uint64_t timestamp = k4abt_frame_get_device_timestamp_usec(bodyFrame);
+    // Setup the JSON message
+    json frame_result_json;
+    frame_result_json["timestamp_usec"] = timestamp;
+    frame_result_json["num_bodies"] = numBodies;// num_bodies;
+    frame_result_json["bodies"] = json::array();
     for (uint32_t i = 0; i < numBodies; i++)
     {
         k4abt_body_t body;
         VERIFY(k4abt_frame_get_body_skeleton(bodyFrame, i, &body.skeleton), "Get skeleton from body frame failed!");
         body.id = k4abt_frame_get_body_id(bodyFrame, i);
+
+        json body_result_json;
+        body_result_json["body_id"] = body.id;
 
         // Assign the correct color based on the body id
         Color color = g_bodyColors[body.id % g_bodyColors.size()];
@@ -211,13 +358,19 @@ void VisualizeResult(k4abt_frame_t bodyFrame, Window3dWrapper& window3d, int dep
                 const k4a_float3_t& jointPosition = body.skeleton.joints[joint].position;
                 const k4a_quaternion_t& jointOrientation = body.skeleton.joints[joint].orientation;
 
+                // Add joint position to the JSON message
+                body_result_json[joint_names[joint]].push_back({ jointPosition.xyz.x,
+                                                                jointPosition.xyz.y,
+                                                                jointPosition.xyz.z });
+
                 window3d.AddJoint(
                     jointPosition,
                     jointOrientation,
                     body.skeleton.joints[joint].confidence_level >= K4ABT_JOINT_CONFIDENCE_MEDIUM ? color : lowConfidenceColor);
             }
         }
-
+        // Add the body to the JSON message
+        frame_result_json["bodies"].push_back(body_result_json);
         // Visualize bones
         for (size_t boneIdx = 0; boneIdx < g_boneList.size(); boneIdx++)
         {
@@ -236,11 +389,17 @@ void VisualizeResult(k4abt_frame_t bodyFrame, Window3dWrapper& window3d, int dep
             }
         }
     }
-
+    // send the json message over udp
+    if (socket && endpoints && numBodies > 0) {
+        cout << frame_result_json << endl;
+        auto msg = frame_result_json.dump();
+        send_message(msg);
+    }
     k4a_capture_release(originalCapture);
     k4a_image_release(depthImage);
 
 }
+
 
 void PlayFile(InputSettings inputSettings)
 {
@@ -335,15 +494,27 @@ void PlayFile(InputSettings inputSettings)
         window3d.Render();
     }
 
+    shutdown_udp();
+
     k4abt_tracker_shutdown(tracker);
     k4abt_tracker_destroy(tracker);
     window3d.Delete();
     printf("Finished body tracking processing!\n");
     k4a_playback_close(playbackHandle);
 }
-
+#include <iostream>
+#include <sstream>
 void PlayFromDevice(InputSettings inputSettings) 
 {
+    uint32_t count = k4a_device_get_installed_count();
+    std::stringstream ss;
+    ss << "Number of devices detected: ";
+    ss << count;
+    ss << "!";
+    std::string s;
+    ss >> s;
+    std::cout << s << std::endl;
+
     k4a_device_t device = nullptr;
     VERIFY(k4a_device_open(0, &device), "Open K4A Device failed!");
 
@@ -417,6 +588,8 @@ void PlayFromDevice(InputSettings inputSettings)
 
     std::cout << "Finished body tracking processing!" << std::endl;
 
+    shutdown_udp();
+
     window3d.Delete();
     k4abt_tracker_shutdown(tracker);
     k4abt_tracker_destroy(tracker);
@@ -435,6 +608,14 @@ int main(int argc, char** argv)
         PrintUsage();
         return -1;
     }
+
+    // Initialize the UDP socket
+    // Check if there are host:port input, otherwise use default
+    string ip_address;
+    int port;
+    ip_address = !inputSettings.ip_address.empty() ? inputSettings.ip_address : "127.0.0.1";
+    port = inputSettings.port ? inputSettings.port : 55555;
+    setup_udp(ip_address, port);
 
     // Either play the offline file or play from the device
     if (inputSettings.Offline == true)
